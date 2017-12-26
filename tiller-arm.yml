@@ -1,0 +1,72 @@
+jobs:
+- name: build
+  plan:
+  - get: helm-release
+    trigger: true
+    params:
+      include_source_tarball: true
+  - task: transmogrify-release-source
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: concourse/git-resource
+      inputs:
+      - name: helm-release
+      outputs:
+      - name: patched-release-source
+
+      run:
+        path: sh
+        args:
+        - -exc
+        - |
+          tar -zvxf helm-release/source.tar.gz
+          mv -v kubernetes-helm-*/* patched-release-source
+          cd patched-release-source
+          cat > Dockerfile <<EOT
+          FROM golang AS build
+
+          ADD . /go/src/k8s.io/helm
+          WORKDIR /go/src/k8s.io/helm
+          RUN go get -u github.com/golang/protobuf || true
+          RUN go install github.com/golang/protobuf/protoc-gen-go
+          RUN make bootstrap
+          RUN make docker-binary
+          EOT
+          cat rootfs/Dockerfile >> Dockerfile
+          sed -i Dockerfile \
+            -es'^COPY tiller /tiller^COPY --from=build /go/src/k8s.io/helm/rootfs/tiller /tiller^' \
+            -es'^FROM alpine:3.3^FROM alpine:latest^'
+
+          sed -i Makefile -e's^GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -o $(BINDIR)/tiller^CGO_ENABLED=0 $(GO) build -o $(BINDIR)/tiller^'
+          cat Dockerfile
+
+  - put: tiller-arm-release
+    params:
+      build: patched-release-source
+      tag: helm-release/tag
+      tag_as_latest: true
+
+resources:
+- name: helm-release
+  type: github-release
+  source:
+    owner: kubernetes
+    repository: helm
+    access_token: ((github.token))
+- name: tiller-arm-release
+  type: remote-docker-image
+  source:
+    repository: ((docker.target_arm_tiller))
+    username: ((docker.user_tiller))
+    password: ((docker.password_tiller))
+    dockerd: ((docker.dockerd))
+
+resource_types:
+- name: remote-docker-image
+  type: docker-image
+  source:
+    repository: timotto/docker-image-resource
+  privileged: true
