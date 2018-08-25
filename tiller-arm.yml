@@ -23,7 +23,7 @@ jobs:
         - -exc
         - |
           tar -zvxf helm-release/source.tar.gz
-          mv -v kubernetes-helm-*/* patched-release-source
+          mv -v helm-helm-*/* patched-release-source
           cd patched-release-source
           cat > Dockerfile <<EOT
           FROM golang AS build
@@ -53,7 +53,7 @@ resources:
 - name: helm-release
   type: github-release
   source:
-    owner: kubernetes
+    owner: helm
     repository: helm
     access_token: ((github.token))
 - name: tiller-arm-release
