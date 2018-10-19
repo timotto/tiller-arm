@@ -5,47 +5,47 @@ jobs:
     trigger: true
     params:
       include_source_tarball: true
-  - task: transmogrify-release-source
+  - task: build-helm
     config:
       platform: linux
       image_resource:
         type: docker-image
         source:
-          repository: concourse/git-resource
+          repository: golang
+          tag: latest
       inputs:
       - name: helm-release
       outputs:
-      - name: patched-release-source
-
+      - name: docker
       run:
-        path: sh
+        path: bash
         args:
         - -exc
         - |
+          curl https://glide.sh/get | sh
           tar -zvxf helm-release/source.tar.gz
-          mv -v helm-helm-*/* patched-release-source
-          cd patched-release-source
-          cat > Dockerfile <<EOT
-          FROM golang AS build
+          src=$PWD
+          target=$PWD/docker
 
-          ADD . /go/src/k8s.io/helm
-          WORKDIR /go/src/k8s.io/helm
-          RUN go get -u github.com/golang/protobuf || true
-          RUN go install github.com/golang/protobuf/protoc-gen-go
-          RUN make bootstrap
-          RUN make docker-binary
-          EOT
-          cat rootfs/Dockerfile >> Dockerfile
-          sed -i Dockerfile \
-            -es'^COPY tiller /tiller^COPY --from=build /go/src/k8s.io/helm/rootfs/tiller /tiller^' \
-            -es'^FROM alpine:3.3^FROM alpine:latest^'
+          cd /go
+          mkdir -p src/k8s.io
+          mv $src/helm-helm-* src/k8s.io/helm
+          cd src/k8s.io/helm
 
-          sed -i Makefile -e's^GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -o $(BINDIR)/tiller^CGO_ENABLED=0 $(GO) build -o $(BINDIR)/tiller^'
-          cat Dockerfile
+          sed -i rootfs/Dockerfile -e's|FROM alpine|FROM arm32v6/alpine|'
+          sed -i Makefile -es'/GOARCH=amd64 //'
+
+          export GOARCH=arm
+          export GOARM=7
+
+          make bootstrap
+          make docker-binary
+
+          cp -v rootfs/* $target/
 
   - put: tiller-arm-release
     params:
-      build: patched-release-source
+      build: docker
       tag: helm-release/tag
       tag_as_latest: true
 
@@ -60,6 +60,7 @@ resources:
   type: remote-docker-image
   source:
     repository: ((docker.target_arm_tiller))
+    tag: latest
     username: ((docker.user_tiller))
     password: ((docker.password_tiller))
     dockerd: ((docker.dockerd))
@@ -69,4 +70,5 @@ resource_types:
   type: docker-image
   source:
     repository: timotto/docker-image-resource
+    tag: latest
   privileged: true
