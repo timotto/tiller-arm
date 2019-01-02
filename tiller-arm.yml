@@ -55,15 +55,15 @@ resources:
   source:
     owner: helm
     repository: helm
-    access_token: ((github.token))
+    access_token: ((github.access_token))
 - name: tiller-arm-release
   type: remote-docker-image
   source:
-    repository: ((docker.target_arm_tiller))
+    repository: timotto/rpi-tiller
     tag: latest
-    username: ((docker.user_tiller))
-    password: ((docker.password_tiller))
-    dockerd: ((docker.dockerd))
+    username: ((dockerhub.username))
+    password: ((dockerhub.password))
+    dockerd: ((dockerd))
 
 resource_types:
 - name: remote-docker-image
